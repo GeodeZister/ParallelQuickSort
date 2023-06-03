@@ -1,0 +1,145 @@
+#include <iostream>
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <random>
+#include <thread>
+using namespace std;
+
+// Global variables for managing the depth of the parallelism
+int max_level = 4;
+static int counter = 0;
+static int level = 0;
+
+// Function to generate a random double between 0 and 1000
+double random()
+{
+    double min = 0.0;
+    double max = 1000.0;
+    // Generate random number and scale to desired range
+    double number = (double)rand() / (double)RAND_MAX * (max - min) + min;
+    return number;
+}
+
+// Function to perform the partition phase of the QuickSort algorithm
+int partition(double* arr, int low, int high)
+{
+    // Selecting the pivot element
+    int pivot = low + (high - low) / 2;
+    double pivot_element = arr[pivot];
+
+    // Moving pivot to the beginning of the array
+    swap(arr[pivot], arr[low]);
+
+    // Partitioning the array around the pivot
+    int i = low + 1;
+    int j = high;
+    while (i <= j) {
+        while (i <= j && arr[i] <= pivot_element) i++;
+        while (i <= j && arr[j] > pivot_element) j--;
+        if (i < j)
+            swap(arr[i], arr[j]);
+    }
+
+    // Moving pivot element to its final position
+    swap(arr[low], arr[j]);
+
+    return j;
+}
+
+// Function to perform QuickSort in a non-parallel way
+void non_parallel_quick_sort(double* arr, int low, int high)
+{
+    if (low < high) {
+        int pivot = partition(arr, low, high);
+        non_parallel_quick_sort(arr, low, pivot - 1);
+        non_parallel_quick_sort(arr, pivot + 1, high);
+    }
+}
+
+// Function to perform QuickSort in parallel using multiple threads
+void parallel_quick_sort(double* arr, int low, int high, int level)
+{
+    // Limit the depth of the parallelism
+    if (level < max_level) {
+
+        if (low < high) {
+            int pivot = partition(arr, low, high);
+            counter++;
+
+            // Create two threads for each partition of the array
+            thread thr1(parallel_quick_sort, arr, low, pivot - 1, level + 1);
+            thread thr2(parallel_quick_sort, arr, pivot + 1, high, level + 1);
+            
+            // Wait for both threads to complete
+            thr1.join();
+            thr2.join();
+        }
+    }
+    else {
+        // If we've reached max depth, use non-parallel QuickSort
+        non_parallel_quick_sort(arr, low, high);
+    }
+}
+
+// Function to initialize the array with random numbers
+void init(double* arr, size_t size) {
+   for (size_t i = 0; i < size; ++i) {
+        arr[i] = random();
+    }
+}
+
+// Function to test the time of parallel quick sort
+void test_parallel(double* arr, int size) {
+    auto start = chrono::high_resolution_clock::now();
+    non_parallel_quick_sort(arr, 0, size - 1);
+    auto stop = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::microseconds>(stop - start);
+    cout << endl << "NON Parallel: " << fixed << setprecision(3) << duration.count() / 1000000.0 << " seconds" << endl;
+}
+
+// Function to test the time of non-parallel quick sort
+void test_non_parallel(double* arr, int size) {
+    auto start = std::chrono::high_resolution_clock::now();
+    parallel_quick_sort(arr, 0, size - 1, 0);
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    cout << endl << "Parallel: " << fixed << setprecision(3) << duration.count() / 1000000.0 << " seconds" << endl;
+    cout << endl << "Number of streams: " << counter + 1 << endl;
+}
+
+// Function to check if the array is sorted correctly
+bool check(double* arr, int size) {
+    for (int i = 0; i < size - 1; i++) {
+        // If we find a number that is greater than the next one, the array is not sorted
+        if (arr[i] > arr[i + 1]) {
+            return false;
+        }
+    }
+    // If we didn't find any number out of order, the array is sorted
+    return true;
+}
+
+int main()
+{
+    int size = 10000000;
+    cout << "Array size: " << size / 1000000.0 << "millions" << endl;
+
+    // Creating and initializing the array
+    double* arr = new double[size];
+    init(arr, size);
+
+    // Testing and checking the sorting functions
+    test_parallel(arr, size);
+    bool is_non_parallel_sorted = check(arr, size);
+    cout << (is_non_parallel_sorted ? "Array is sorted correctly after non-parallel sorting" : "Array is not sorted correctly after non-parallel sorting") << endl;
+    
+    test_non_parallel(arr, size);
+    bool is_parallel_sorted = check(arr, size);
+    cout << (is_parallel_sorted ? "Array is sorted correctly after parallel sorting" : "Array is not sorted correctly after parallel sorting") << endl;
+
+    // Clean up
+    delete[] arr;
+    return 0;
+}
